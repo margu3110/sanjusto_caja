@@ -1,3 +1,7 @@
+
+## Note:
+During the data import to populate the DEV DB, we are filtering duplicate rows from Facturas.
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
