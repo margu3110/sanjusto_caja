@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { crearRecibo } from "../api/caja";
 import {
   Box,
   Button,
@@ -7,17 +8,17 @@ import {
   Paper,
   TextField,
   Typography,
-  MenuItem,
-  Select,
   Grid,
 } from "@mui/material";
-import { useHotkeys }
-from "react-hotkeys-hook";
-
-import { useRef } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import Autocomplete from "@mui/material/Autocomplete";
 
-
+import {
+  getCuentas,
+  getPersonas,
+  type Cuenta,
+  type Persona,
+} from "../api/caja";
 
 type Line = {
   id: number;
@@ -26,9 +27,9 @@ type Line = {
   amount: number;
 };
 
-
 export default function CajaPage() {
-  const [customer, setCustomer] = useState("");
+  const [selectedCustomer, setSelectedCustomer] =
+  useState<Persona | null>(null);
   const [noCustomer, setNoCustomer] = useState(false);
 
   const [category, setCategory] = useState("");
@@ -36,26 +37,48 @@ export default function CajaPage() {
   const [amount, setAmount] = useState("");
 
   const [lines, setLines] = useState<Line[]>([]);
-  const [receiptNumber] =
-    useState("00063150");
+  const [receiptNumber, setReceiptNumber] =
+    useState<string | null>(null);
 
-  const customers = [
-    { id: 1, name: "@ Mun de San Justo" },
-    { id: 2, name: "Cooperativa de Agua" },
-    { id: 3, name: "Cementerio" },
-  ];
+  const [customers, setCustomers] = useState<Persona[]>([]);
+  const [categories, setCategories] = useState<Cuenta[]>([]);
 
-  const categories = [
-    { id: 1, code: "001", name: "ALQ TRACTOR Y PALA" },
-    { id: 2, code: "002", name: "ALQ MINICARGADORA" },
-    { id: 3, code: "003", name: "ALQUILER HIDROELEVADOR" },
-  ];
+  const [loadingData, setLoadingData] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
-  const descriptionRef =
-    useRef<HTMLInputElement>(null);
+  const descriptionRef = useRef<HTMLInputElement>(null);
+  const amountRef = useRef<HTMLInputElement>(null);
 
-  const amountRef =
-    useRef<HTMLInputElement>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [savedReceipt, setSavedReceipt] = useState<string | null>(null);
+
+
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        setLoadingData(true);
+        setLoadError("");
+
+        const [personas, cuentas] = await Promise.all([
+          getPersonas(),
+          getCuentas(),
+        ]);
+
+        setCustomers(personas);
+        setCategories(cuentas);
+      } catch (error) {
+        console.error(error);
+        setLoadError("No se pudieron cargar los datos de Caja.");
+      } finally {
+        setLoadingData(false);
+      }
+    }
+
+    loadData();
+  }, []);
+
   const addLine = () => {
     if (!category || !description || !amount) return;
 
@@ -80,8 +103,51 @@ export default function CajaPage() {
 
   const total = lines.reduce((acc, l) => acc + l.amount, 0);
 
+  const handleRegistrar = async () => {
+    if (lines.length === 0) {
+      setSaveError("Debe agregar al menos una línea.");
+      return;
+    }
+
+    setSaving(true);
+    setSaveError("");
+    setSavedReceipt(null);
+
+    try {
+      const result = await crearRecibo({
+        customerCode: noCustomer
+          ? null
+          : selectedCustomer?.codigo ?? null,
+
+        lines: lines.map((line) => ({
+          accountCode: line.category,
+          description: line.description,
+          amount: line.amount,
+        })),
+      });
+
+      setSavedReceipt(result.numeroFactura);
+
+      setLines([]);
+      setCategory("");
+      setDescription("");
+      setAmount("");
+      setSelectedCustomer(null);
+      setNoCustomer(false);
+
+    } catch (error) {
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : "No se pudo registrar el recibo",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleAmountKeyDown = (
-    e: React.KeyboardEvent
+    e: React.KeyboardEvent<HTMLInputElement>
   ) => {
     if (e.key === "Enter") {
       addLine();
@@ -108,22 +174,26 @@ export default function CajaPage() {
         Programa de Caja
       </Typography>
 
+      {loadError && (
+        <Paper sx={{ p: 2, mb: 2 }}>
+          <Typography color="error">
+            {loadError}
+          </Typography>
+        </Paper>
+      )}
+
       {/* HEADER */}
       <Paper sx={{ p: 2, mb: 2 }}>
         <Grid container spacing={2} sx={{ width: "100%" }}>
-
           <Grid size={6}>
             <Autocomplete
               options={customers}
-              getOptionLabel={(option) => option.name}
+              getOptionLabel={(option) =>
+                `${option.codigo} - ${option.razonSocial}`
+              }
               disabled={noCustomer}
-              value={
-                customers.find((c) => c.name === customer)
-                || null
-              }
-              onChange={(_, value) =>
-                setCustomer(value?.name || "")
-              }
+              value={selectedCustomer}
+              onChange={(_, value) => setSelectedCustomer(value)}
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -138,7 +208,15 @@ export default function CajaPage() {
               control={
                 <Checkbox
                   checked={noCustomer}
-                  onChange={(e) => setNoCustomer(e.target.checked)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+
+                    setNoCustomer(checked);
+
+                    if (checked) {
+                      setSelectedCustomer(null);
+                    }
+                  }}
                 />
               }
               label="Sin contribuyente"
@@ -165,27 +243,29 @@ export default function CajaPage() {
               value={new Date().toLocaleDateString()}
             />
           </Grid>
-
         </Grid>
       </Paper>
 
       {/* INPUT LINE */}
       <Paper sx={{ p: 2, mb: 2 }}>
         <Grid container spacing={2}>
-
-          <Box display="flex" flexDirection="column" gap={2}>
+          <Box
+            display="flex"
+            flexDirection="column"
+            gap={2}
+          >
             <Autocomplete
               options={categories}
               getOptionLabel={(option) =>
-                `${option.code} - ${option.name}`
+                `${option.codigo} - ${option.descripcion}`
               }
               value={
                 categories.find(
-                  (c) => c.name === category
+                  (c) => c.codigo === category
                 ) || null
               }
               onChange={(_, value) => {
-                setCategory(value?.name || "");
+                setCategory(value?.codigo || "");
 
                 setTimeout(() => {
                   descriptionRef.current?.focus();
@@ -198,35 +278,40 @@ export default function CajaPage() {
                 />
               )}
             />
-          
 
             <Box
               display="grid"
               gridTemplateColumns="4fr 1fr"
               gap={2}
             >
-            <TextField
-              fullWidth
-              label="Descripción"
-              value={description}
-              inputRef={descriptionRef}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          
+              <TextField
+                fullWidth
+                label="Descripción"
+                value={description}
+                inputRef={descriptionRef}
+                onChange={(e) =>
+                  setDescription(e.target.value)
+                }
+              />
 
-            <TextField
-              fullWidth
-              label="Importe"
-              type="number"
-              value={amount}
-              inputRef={amountRef}
-              onChange={(e) => setAmount(e.target.value)}
-              onKeyDown={handleAmountKeyDown}
-            />
+              <TextField
+                fullWidth
+                label="Importe"
+                type="number"
+                value={amount}
+                inputRef={amountRef}
+                onChange={(e) =>
+                  setAmount(e.target.value)
+                }
+                onKeyDown={handleAmountKeyDown}
+              />
 
-            <Button variant="contained" onClick={addLine}>
-              Agregar línea
-            </Button>
+              <Button
+                variant="contained"
+                onClick={addLine}
+              >
+                Agregar línea
+              </Button>
             </Box>
           </Box>
         </Grid>
@@ -234,7 +319,12 @@ export default function CajaPage() {
 
       {/* TABLE */}
       <Paper sx={{ p: 2 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <table
+          style={{
+            width: "100%",
+            borderCollapse: "collapse",
+          }}
+        >
           <thead>
             <tr>
               <th align="left">Categoría</th>
@@ -247,7 +337,13 @@ export default function CajaPage() {
           <tbody>
             {lines.length === 0 ? (
               <tr>
-                <td colSpan={4} style={{ textAlign: "center", padding: 10 }}>
+                <td
+                  colSpan={4}
+                  style={{
+                    textAlign: "center",
+                    padding: 10,
+                  }}
+                >
                   Sin registros
                 </td>
               </tr>
@@ -257,18 +353,16 @@ export default function CajaPage() {
                   <td>{l.category}</td>
                   <td>{l.description}</td>
                   <td style={{ textAlign: "right" }}>
-                    {
-                      new Intl.NumberFormat(
-                        "es-AR",
-                        {
-                          style: "currency",
-                          currency: "ARS",
-                        }
-                      ).format(l.amount)
-                    }
+                    {new Intl.NumberFormat("es-AR", {
+                      style: "currency",
+                      currency: "ARS",
+                    }).format(l.amount)}
                   </td>
                   <td>
-                    <Button color="error" onClick={() => removeLine(l.id)}>
+                    <Button
+                      color="error"
+                      onClick={() => removeLine(l.id)}
+                    >
                       X
                     </Button>
                   </td>
@@ -279,28 +373,45 @@ export default function CajaPage() {
         </table>
 
         {/* TOTAL */}
-        <Box mt={2} display="flex" justifyContent="space-between">
+        <Box
+          mt={2}
+          display="flex"
+          justifyContent="space-between"
+        >
           <Typography variant="h5">
             TOTAL
           </Typography>
 
-          <Typography variant="h5" fontWeight="bold">
-            {
-              new Intl.NumberFormat(
-                "es-AR",
-                {
-                  style: "currency",
-                  currency: "ARS",
-                }
-              ).format(total)
-            }
+          <Typography
+            variant="h5"
+            fontWeight="bold"
+          >
+            {new Intl.NumberFormat("es-AR", {
+              style: "currency",
+              currency: "ARS",
+            }).format(total)}
           </Typography>
         </Box>
 
         {/* ACTIONS */}
+        {saveError && (
+          <Typography color="error" sx={{ mb: 2 }}>
+            {saveError}
+          </Typography>
+        )}
+
+        {savedReceipt && (
+          <Typography color="success.main" sx={{ mb: 2 }}>
+            Recibo registrado: {savedReceipt}
+          </Typography>
+        )}
         <Box mt={2} display="flex" gap={2}>
-          <Button variant="contained">
-            Registrar
+          <Button
+            variant="contained"
+            onClick={handleRegistrar}
+            disabled={saving}
+          >
+            {saving ? "Registrando..." : "Registrar"}
           </Button>
 
           <Button variant="outlined">
