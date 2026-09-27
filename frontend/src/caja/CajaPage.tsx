@@ -227,7 +227,7 @@ export default function CajaPage() {
             <TextField
               fullWidth
               label="N° Recibo"
-              value={receiptNumber}
+              value={receiptNumber || "Nuevo"}
               slotProps={{
                 input: {
                   readOnly: true,
@@ -409,7 +409,7 @@ export default function CajaPage() {
           <Button
             variant="contained"
             onClick={handleRegistrar}
-            disabled={saving}
+            disabled={saving || lines.length === 0}
           >
             {saving ? "Registrando..." : "Registrar"}
           </Button>
