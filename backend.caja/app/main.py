@@ -12,6 +12,7 @@ from .services.caja import (
     create_recibo,
     get_cuentas,
     get_personas,
+    get_parametros,
 )
 
 app = FastAPI(
@@ -19,6 +20,15 @@ app = FastAPI(
     version="0.1.0",
 )
 
+
+@app.get("/parametros", tags=["caja"])
+def parametros():
+    db = SessionLocal()
+
+    try:
+        return get_parametros(db)
+    finally:
+        db.close()
 
 @app.get("/health", tags=["health"])
 def health():
@@ -89,6 +99,35 @@ def crear_recibo(recibo: ReciboCreate):
     except Exception:
         db.rollback()
         raise
+
+    finally:
+        db.close()
+
+from .services.caja import (
+    get_personas,
+    get_cuentas,
+    create_recibo,
+    get_recibo_para_impresion,
+)
+
+@app.get(
+    "/recibos/{numero_factura}/impresion",
+    tags=["caja"],
+)
+def recibo_para_impresion(numero_factura: str):
+    db = SessionLocal()
+
+    try:
+        return get_recibo_para_impresion(
+            db,
+            numero_factura,
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=str(e),
+        )
 
     finally:
         db.close()

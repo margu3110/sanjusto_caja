@@ -24,6 +24,57 @@ CAJA_SERVICE_URL = os.getenv(
     "http://backend.caja:8000",
 )
 
+@app.get("/api/caja/parametros", tags=["caja"])
+async def parametros():
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{CAJA_SERVICE_URL}/parametros",
+                timeout=10.0,
+            )
+
+        if response.status_code >= 400:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail="Error en backend.caja",
+            )
+
+        return response.json()
+
+    except httpx.RequestError:
+        raise HTTPException(
+            status_code=503,
+            detail="backend.caja no está disponible",
+        )
+
+@app.get(
+    "/api/caja/recibos/{numero_factura}/impresion",
+    tags=["caja"],
+)
+async def recibo_para_impresion(numero_factura: str):
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{CAJA_SERVICE_URL}/recibos/{numero_factura}/impresion",
+                timeout=10.0,
+            )
+
+        if response.status_code >= 400:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=response.json().get(
+                    "detail",
+                    "Error en backend.caja",
+                ),
+            )
+
+        return response.json()
+
+    except httpx.RequestError:
+        raise HTTPException(
+            status_code=503,
+            detail="backend.caja no está disponible",
+        )
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def dashboard():

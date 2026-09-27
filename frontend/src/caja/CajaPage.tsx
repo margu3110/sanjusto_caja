@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { crearRecibo } from "../api/caja";
 import {
   Box,
   Button,
@@ -14,8 +13,10 @@ import { useHotkeys } from "react-hotkeys-hook";
 import Autocomplete from "@mui/material/Autocomplete";
 
 import {
+  crearRecibo,
   getCuentas,
   getPersonas,
+  getReciboParaImpresion,
   type Cuenta,
   type Persona,
 } from "../api/caja";
@@ -127,13 +128,7 @@ export default function CajaPage() {
       });
 
       setSavedReceipt(result.numeroFactura);
-
-      setLines([]);
-      setCategory("");
-      setDescription("");
-      setAmount("");
-      setSelectedCustomer(null);
-      setNoCustomer(false);
+      setReceiptNumber(result.numeroFactura);
 
     } catch (error) {
       setSaveError(
@@ -143,6 +138,413 @@ export default function CajaPage() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleNuevoRecibo = () => {
+    setSavedReceipt(null);
+    setReceiptNumber(null);
+
+    setSelectedCustomer(null);
+    setNoCustomer(false);
+
+    setCategory("");
+    setDescription("");
+    setAmount("");
+
+    setLines([]);
+    setSaveError("");
+  };
+  
+  const handleImprimir = async () => {
+    if (!savedReceipt) {
+      return;
+    }
+
+    try {
+      const recibo = await getReciboParaImpresion(
+        savedReceipt,
+      );
+
+      const printWindow = window.open(
+        "",
+        "_blank",
+        "width=900,height=700",
+      );
+
+      if (!printWindow) {
+        alert(
+          "No se pudo abrir la ventana de impresión. Verifique que las ventanas emergentes estén permitidas.",
+        );
+        return;
+      }
+
+      const formatCurrency = (value: number) =>
+        new Intl.NumberFormat("es-AR", {
+          style: "currency",
+          currency: "ARS",
+        }).format(value);
+
+      const formatDate = (value: string) =>
+        new Intl.DateTimeFormat("es-AR", {
+          dateStyle: "short",
+          timeStyle: "short",
+        }).format(new Date(value));
+
+      const customerHtml = recibo.customer
+        ? `
+          <div class="customer">
+            <div>
+              <strong>Contribuyente:</strong>
+              ${recibo.customer.codigo} -
+              ${recibo.customer.razonSocial}
+            </div>
+
+            ${
+              recibo.customer.numeroDocumento
+                ? `
+                  <div>
+                    <strong>Documento:</strong>
+                    ${recibo.customer.numeroDocumento}
+                  </div>
+                `
+                : ""
+            }
+
+            ${
+              recibo.customer.domicilio
+                ? `
+                  <div>
+                    <strong>Domicilio:</strong>
+                    ${recibo.customer.domicilio}
+                  </div>
+                `
+                : ""
+            }
+          </div>
+        `
+        : `
+          <div class="customer">
+            <strong>Contribuyente:</strong>
+            Sin contribuyente
+          </div>
+        `;
+
+      const linesHtml = recibo.lines
+        .map(
+          (line) => `
+            <tr>
+              <td class="code">
+                ${line.accountCode}
+              </td>
+
+              <td>
+                <strong>
+                  ${line.accountDescription ?? ""}
+                </strong>
+
+                <div class="line-description">
+                  ${line.description}
+                </div>
+              </td>
+
+              <td class="amount">
+                ${formatCurrency(line.amount)}
+              </td>
+            </tr>
+          `,
+        )
+        .join("");
+
+      const copies = (copyLabel: string) => `
+        <section class="copy">
+
+          <header>
+            <div class="logo-placeholder">
+              LOGO
+            </div>
+
+            <div class="header-text">
+              <h1>PROGRAMA DE CAJA</h1>
+              <div>Municipalidad de San Justo</div>
+              <div>CUIT: ${recibo.parametros?.cuit ?? ""}</div>
+              <div>
+                ${recibo.parametros?.direccion ?? ""}
+              </div>
+              <div>
+                Teléfono: ${recibo.parametros?.telefono ?? ""}
+              </div>
+            </div>
+          </header>
+
+          <div class="title">
+            <h2>COMPROBANTE DE CAJA</h2>
+          </div>
+
+          <div class="receipt-info">
+            <div>
+              <strong>N.º de comprobante:</strong>
+              ${recibo.numeroFactura}
+            </div>
+
+            <div>
+              <strong>Fecha:</strong>
+              ${formatDate(recibo.fecha)}
+            </div>
+          </div>
+
+          ${customerHtml}
+
+          <table>
+            <thead>
+              <tr>
+                <th class="code">Código</th>
+                <th>Concepto</th>
+                <th class="amount">Importe</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${linesHtml}
+            </tbody>
+
+            <tfoot>
+              <tr>
+                <td colspan="2">
+                  <strong>TOTAL</strong>
+                </td>
+                <td class="amount">
+                  <strong>
+                    ${formatCurrency(recibo.total)}
+                  </strong>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <div class="cashier">
+            <strong>Cajero:</strong>
+            __________________________________________
+          </div>
+
+          <div class="signature">
+            <strong>Firma / aclaración:</strong>
+            __________________________________________
+          </div>
+
+          <div class="copy-label">
+            ${copyLabel}
+          </div>
+
+        </section>
+      `;
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html lang="es">
+          <head>
+            <meta charset="UTF-8">
+
+            <title>
+              Recibo ${recibo.numeroFactura}
+            </title>
+
+            <style>
+              @page {
+                size: A4;
+                margin: 15mm;
+              }
+
+              * {
+                box-sizing: border-box;
+              }
+
+              html,
+              body {
+                margin: 0;
+                padding: 0;
+                font-family:
+                  Arial,
+                  Helvetica,
+                  sans-serif;
+                color: #000;
+                font-size: 11pt;
+              }
+
+              .copy {
+                width: 100%;
+                min-height: 267mm;
+                position: relative;
+                page-break-after: always;
+              }
+
+              .copy:last-child {
+                page-break-after: auto;
+              }
+
+              header {
+                display: flex;
+                align-items: center;
+                border-bottom: 1px solid #000;
+                padding-bottom: 8mm;
+              }
+
+              .logo-placeholder {
+                width: 30mm;
+                height: 22mm;
+                border: 1px solid #777;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 9pt;
+                color: #555;
+                margin-right: 8mm;
+              }
+
+              .header-text {
+                flex: 1;
+              }
+
+              .header-text h1 {
+                margin: 0 0 2mm 0;
+                font-size: 18pt;
+              }
+
+              .header-text div {
+                margin: 1mm 0;
+              }
+
+              .title {
+                text-align: center;
+                margin: 8mm 0;
+              }
+
+              .title h2 {
+                margin: 0;
+                font-size: 15pt;
+              }
+
+              .receipt-info {
+                display: flex;
+                justify-content: space-between;
+                border: 1px solid #000;
+                padding: 4mm;
+                margin-bottom: 6mm;
+              }
+
+              .customer {
+                border: 1px solid #000;
+                padding: 4mm;
+                margin-bottom: 8mm;
+                line-height: 1.6;
+              }
+
+              table {
+                width: 100%;
+                border-collapse: collapse;
+              }
+
+              th,
+              td {
+                border: 1px solid #000;
+                padding: 3mm;
+                vertical-align: top;
+              }
+
+              th {
+                text-align: left;
+              }
+
+              .code {
+                width: 25mm;
+              }
+
+              .amount {
+                width: 35mm;
+                text-align: right;
+                white-space: nowrap;
+              }
+
+              .line-description {
+                margin-top: 1mm;
+                font-size: 10pt;
+              }
+
+              tfoot td {
+                border-top: 2px solid #000;
+                font-size: 12pt;
+              }
+
+              .cashier {
+                margin-top: 20mm;
+              }
+
+              .signature {
+                margin-top: 12mm;
+              }
+
+              .copy-label {
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                text-align: center;
+                border-top: 1px dashed #000;
+                padding-top: 4mm;
+                font-weight: bold;
+                font-size: 10pt;
+              }
+
+              @media screen {
+                body {
+                  background: #eee;
+                  padding: 15mm;
+                }
+
+                .copy {
+                  background: white;
+                  width: 210mm;
+                  min-height: 297mm;
+                  margin: 0 auto 15mm auto;
+                  padding: 15mm;
+                  box-shadow:
+                    0 0 8px rgba(0, 0, 0, 0.2);
+                }
+              }
+
+              @media print {
+                .copy {
+                  min-height: 267mm;
+                }
+              }
+            </style>
+          </head>
+
+          <body>
+            ${copies("COPIA CLIENTE")}
+            ${copies("COPIA CAJERO")}
+          </body>
+        </html>
+      `);
+
+      printWindow.document.close();
+
+      printWindow.focus();
+
+      printWindow.onload = () => {
+        printWindow.print();
+      };
+    } catch (error) {
+      console.error(
+        "Error al preparar la impresión:",
+        error,
+      );
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : "No se pudo preparar la impresión.",
+      );
     }
   };
 
@@ -191,7 +593,7 @@ export default function CajaPage() {
               getOptionLabel={(option) =>
                 `${option.codigo} - ${option.razonSocial}`
               }
-              disabled={noCustomer}
+              disabled={noCustomer || savedReceipt !== null}
               value={selectedCustomer}
               onChange={(_, value) => setSelectedCustomer(value)}
               renderInput={(params) => (
@@ -208,6 +610,7 @@ export default function CajaPage() {
               control={
                 <Checkbox
                   checked={noCustomer}
+                  disabled={savedReceipt !== null}
                   onChange={(e) => {
                     const checked = e.target.checked;
 
@@ -256,6 +659,7 @@ export default function CajaPage() {
           >
             <Autocomplete
               options={categories}
+              disabled={savedReceipt !== null}
               getOptionLabel={(option) =>
                 `${option.codigo} - ${option.descripcion}`
               }
@@ -286,6 +690,7 @@ export default function CajaPage() {
             >
               <TextField
                 fullWidth
+                disabled={savedReceipt !== null}
                 label="Descripción"
                 value={description}
                 inputRef={descriptionRef}
@@ -297,6 +702,7 @@ export default function CajaPage() {
               <TextField
                 fullWidth
                 label="Importe"
+                disabled={savedReceipt !== null}
                 type="number"
                 value={amount}
                 inputRef={amountRef}
@@ -401,22 +807,57 @@ export default function CajaPage() {
         )}
 
         {savedReceipt && (
-          <Typography color="success.main" sx={{ mb: 2 }}>
-            Recibo registrado: {savedReceipt}
-          </Typography>
+          <Paper
+            sx={{
+              p: 2,
+              mb: 2,
+            }}
+          >
+            <Typography
+              variant="h6"
+              color="success.main"
+              fontWeight="bold"
+            >
+              Recibo registrado
+            </Typography>
+
+            <Typography>
+              N° {savedReceipt}
+            </Typography>
+          </Paper>
         )}
         <Box mt={2} display="flex" gap={2}>
-          <Button
-            variant="contained"
-            onClick={handleRegistrar}
-            disabled={saving || lines.length === 0}
-          >
-            {saving ? "Registrando..." : "Registrar"}
-          </Button>
+          {savedReceipt ? (
+            <>
+              <Button
+                variant="contained"
+                onClick={handleNuevoRecibo}
+              >
+                Nuevo recibo
+              </Button>
 
-          <Button variant="outlined">
-            Imprimir
-          </Button>
+              <Button 
+                  variant="outlined"
+                  onClick={handleImprimir}
+                >
+                Imprimir
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="contained"
+                onClick={handleRegistrar}
+                disabled={saving || lines.length === 0}
+              >
+                {saving ? "Registrando..." : "Registrar"}
+              </Button>
+
+              <Button variant="outlined" disabled>
+                Imprimir
+              </Button>
+            </>
+          )}
         </Box>
       </Paper>
     </Box>

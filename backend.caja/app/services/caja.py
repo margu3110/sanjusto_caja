@@ -4,6 +4,30 @@ from sqlalchemy.orm import Session
 
 from ..schemas.recibos import ReciboCreate
 
+def get_parametros(db: Session):
+    result = db.execute(
+        text(
+            """
+            SELECT
+                CUIT,
+                DIRECCION,
+                TELEFONO
+            FROM PARAMETROS
+            LIMIT 1
+            """
+        )
+    )
+
+    row = result.first()
+
+    if row is None:
+        return None
+
+    return {
+        "cuit": row.CUIT,
+        "direccion": row.DIRECCION,
+        "telefono": row.TELEFONO,
+    }
 
 def create_recibo(db: Session, recibo: ReciboCreate):
     account_codes = [line.accountCode for line in recibo.lines]
@@ -224,3 +248,124 @@ def get_cuentas(db: Session):
         }
         for row in result
     ]
+
+
+def get_recibo_para_impresion(
+    db: Session,
+    numero_factura: str,
+):
+    result = db.execute(
+        text(
+            """
+            SELECT
+                f.CODFACTURA,
+                f.NUMERO_FACTURA,
+                f.FECHA,
+                f.CODPERSONA,
+                f.TPESOS,
+                f.TCHEQUE,
+
+                p.RAZONSOCIAL,
+                p.NUMERO_DOCUMENTO,
+                p.DOMICILIO
+
+            FROM FACTURAS f
+            LEFT JOIN PERSONAS p
+                ON p.CODPERSONA = f.CODPERSONA
+
+            WHERE f.NUMERO_FACTURA = :numero_factura
+            """
+        ),
+        {
+            "numero_factura": numero_factura,
+        },
+    )
+
+    factura = result.first()
+
+    if factura is None:
+        raise ValueError(
+            f"Recibo inexistente: {numero_factura}"
+        )
+
+    result = db.execute(
+        text(
+            """
+            SELECT
+                d.CODCUENTA,
+                c.DESCRIPCION AS CUENTA_DESCRIPCION,
+                d.DESCRIPCION,
+                d.MONTO
+
+            FROM DETALLES d
+            LEFT JOIN CUENTAS c
+                ON c.CODCUENTA = d.CODCUENTA
+
+            WHERE d.CODFACTURA = :codfactura
+
+            ORDER BY d.CODCUENTA
+            """
+        ),
+        {
+            "codfactura": factura.CODFACTURA,
+        },
+    )
+
+    lines = [
+        {
+            "accountCode": row.CODCUENTA,
+            "accountDescription": row.CUENTA_DESCRIPCION,
+            "description": row.DESCRIPCION,
+            "amount": float(row.MONTO),
+        }
+        for row in result
+    ]
+
+    total = sum(line["amount"] for line in lines)
+
+    result = db.execute(
+        text(
+            """
+            SELECT
+                CUIT,
+                DIRECCION,
+                TELEFONO
+            FROM PARAMETROS
+            LIMIT 1
+            """
+        )
+    )
+
+    parametros = result.first()
+
+    return {
+        "numeroFactura": factura.NUMERO_FACTURA,
+        "codFactura": factura.CODFACTURA,
+        "fecha": factura.FECHA.isoformat()
+            if factura.FECHA
+            else None,
+
+        "customer": (
+            {
+                "codigo": factura.CODPERSONA,
+                "razonSocial": factura.RAZONSOCIAL,
+                "numeroDocumento": factura.NUMERO_DOCUMENTO,
+                "domicilio": factura.DOMICILIO,
+            }
+            if factura.CODPERSONA
+            else None
+        ),
+
+        "lines": lines,
+        "total": total,
+
+        "parametros": (
+            {
+                "cuit": parametros.CUIT,
+                "direccion": parametros.DIRECCION,
+                "telefono": parametros.TELEFONO,
+            }
+            if parametros
+            else None
+        ),
+    }

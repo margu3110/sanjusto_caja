@@ -74,3 +74,67 @@ export async function crearRecibo(
 
   return response.json();
 }
+
+export interface Parametros {
+  cuit: string;
+  direccion: string;
+  telefono: string;
+}
+
+export async function getParametros(): Promise<Parametros> {
+  const response = await fetch(`${API_URL}/parametros`);
+
+  if (!response.ok) {
+    throw new Error(
+      "No se pudieron cargar los parámetros de Caja",
+    );
+  }
+
+  return response.json();
+}
+
+export interface ReciboParaImpresion {
+  numeroFactura: string;
+  codFactura: string;
+  fecha: string;
+
+  customer: {
+    codigo: string;
+    razonSocial: string;
+    numeroDocumento: string | null;
+    domicilio: string | null;
+  } | null;
+
+  lines: {
+    accountCode: string;
+    accountDescription: string | null;
+    description: string;
+    amount: number;
+  }[];
+
+  total: number;
+
+  parametros: {
+    cuit: string;
+    direccion: string;
+    telefono: string;
+  } | null;
+}
+
+export async function getReciboParaImpresion(
+  numeroFactura: string,
+): Promise<ReciboParaImpresion> {
+  const response = await fetch(
+    `${API_URL}/recibos/${encodeURIComponent(numeroFactura)}/impresion`,
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail || "No se pudo cargar el recibo",
+    );
+  }
+
+  return response.json();
+}
