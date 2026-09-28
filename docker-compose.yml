@@ -7,3 +7,41 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+
+  backend.api:
+    build: ./backend.api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend.api:/app
+    environment:
+      CAJA_SERVICE_URL: http://backend.caja:8000
+
+  backend.caja:
+    build: ./backend.caja
+    volumes:
+      - ./backend.caja:/app
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: sanjusto
+      MYSQL_USER: root
+      MYSQL_PASSWORD: root
+
+  mysql:
+    image: mysql:8.4
+    container_name: sanjusto-caja-mysql-dev
+    restart: unless-stopped
+
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: sanjusto
+
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+    ports:
+      - "127.0.0.1:3307:3306"
+
+volumes:
+  mysql_data:
