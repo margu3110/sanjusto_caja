@@ -1,0 +1,191 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ROLE_ARN: arn:aws:iam::945824236743:role/github-sanjusto-presupuesto-ci
+  CI_BACKUP_S3_URI: s3://sanjusto-945824236743-backups-private/ci/sanjustodb-ci.sql.gz
+  CI_BACKUP_FILE: /tmp/sanjustodb-ci.sql.gz
+
+jobs:
+  test:
+    name: Build and test WebApp
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: sanjusto-presupuesto-ci
+
+      - name: Verify AWS identity
+        run: |
+          aws sts get-caller-identity
+
+      - name: Download CI database fixture
+        run: |
+          aws s3 cp \
+            "${CI_BACKUP_S3_URI}" \
+            "${CI_BACKUP_FILE}" \
+            --region "${AWS_REGION}"
+
+          ls -lh "${CI_BACKUP_FILE}"
+
+      - name: Build WebApp image
+        run: |
+          docker build \
+            -t sanjusto-presupuesto:ci \
+            .
+
+      - name: Start MySQL
+        run: |
+          docker compose \
+            -f docker-compose.ci.yml \
+            up -d mysql
+
+      - name: Wait for MySQL
+        run: |
+          for attempt in $(seq 1 30); do
+            STATUS="$(docker inspect \
+              "$(docker compose -f docker-compose.ci.yml ps -q mysql)" \
+              --format '{{.State.Health.Status}}')"
+
+            echo "MySQL health status: ${STATUS}"
+
+            if [ "${STATUS}" = "healthy" ]; then
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "MySQL did not become healthy"
+          docker compose -f docker-compose.ci.yml logs mysql
+          exit 1
+
+      - name: Verify MySQL
+        run: |
+          docker compose \
+            -f docker-compose.ci.yml \
+            exec -T mysql \
+            mysql \
+              -uroot \
+              -ptest_root_password \
+              -e 'SELECT VERSION();'
+
+      - name: Restore CI database
+        run: |
+          gunzip -c "${CI_BACKUP_FILE}" |
+            docker compose \
+              -f docker-compose.ci.yml \
+              exec -T mysql \
+              mysql \
+                -uroot \
+                -ptest_root_password \
+                sanjustodb
+
+      - name: Verify database restore
+        run: |
+          TABLE_COUNT="$(docker compose \
+            -f docker-compose.ci.yml \
+            exec -T mysql \
+            mysql \
+              -uroot \
+              -ptest_root_password \
+              --batch \
+              --skip-column-names \
+              sanjustodb \
+              -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='sanjustodb';")"
+
+          echo "Restored table count: ${TABLE_COUNT}"
+
+          if [ "${TABLE_COUNT}" -lt 40 ]; then
+            echo "Unexpectedly low table count after restore"
+            exit 1
+          fi
+
+          docker compose \
+            -f docker-compose.ci.yml \
+            exec -T mysql \
+            mysql \
+              -uroot \
+              -ptest_root_password \
+              --batch \
+              --skip-column-names \
+              sanjustodb \
+              -e "SHOW TABLES LIKE 'tbl_users';" |
+            grep -qx 'tbl_users'
+
+      - name: Start WebApp
+        run: |
+          docker compose \
+            -f docker-compose.ci.yml \
+            up -d web
+
+      - name: Wait for WebApp
+        run: |
+          for attempt in $(seq 1 30); do
+            STATUS="$(curl \
+              --silent \
+              --output /tmp/webapp-response.html \
+              --write-out '%{http_code}' \
+              http://localhost:8080/aplicaciones/proveedores/ \
+              || true)"
+
+            echo "WebApp HTTP status: ${STATUS}"
+
+            if [ "${STATUS}" = "200" ]; then
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "WebApp did not return HTTP 200"
+          exit 1
+
+      - name: Smoke test WebApp
+        run: |
+          grep -q \
+            'Municipalidad de San Justo' \
+            /tmp/webapp-response.html
+
+          grep -q \
+            'Versión 4.0.2' \
+            /tmp/webapp-response.html
+
+          echo "WebApp smoke tests passed"
+
+      - name: Show container status
+        if: always()
+        run: |
+          docker compose \
+            -f docker-compose.ci.yml \
+            ps || true
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          docker compose \
+            -f docker-compose.ci.yml \
+            logs || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker compose \
+            -f docker-compose.ci.yml \
+            down --remove-orphans || true
