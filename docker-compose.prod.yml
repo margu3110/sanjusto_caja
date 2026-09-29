@@ -14,23 +14,23 @@ services:
       - backend.api
 
   frontend:
-    image: docker.io/marguellog/sanjusto-caja-frontend:${APP_VERSION}
+    image: docker.io/marguellog/sanjusto-caja-frontend:prod
     restart: unless-stopped
 
   backend.api:
-    image: docker.io/marguellog/sanjusto-caja-backend-api:${APP_VERSION}
+    image: docker.io/marguellog/sanjusto-caja-backend-api:prod
     restart: unless-stopped
     environment:
       CAJA_SERVICE_URL: http://backend.caja:8000
 
   backend.caja:
-    image: docker.io/marguellog/sanjusto-caja-backend-caja:${APP_VERSION}
+    image: docker.io/marguellog/sanjusto-caja-backend-caja:prod
     restart: unless-stopped
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
-      MYSQL_DATABASE: sanjusto
-      MYSQL_USER: root
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_CAJA_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
 
   mysql:
@@ -38,7 +38,7 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: sanjusto
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
     volumes:
       - mysql_data:/var/lib/mysql
 
