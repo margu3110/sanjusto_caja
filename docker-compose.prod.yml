@@ -14,17 +14,17 @@ services:
       - backend.api
 
   frontend:
-    image: docker.io/YOUR_USER/sanjusto-caja-frontend:${APP_VERSION}
+    image: docker.io/marguellog/sanjusto-caja-frontend:${APP_VERSION}
     restart: unless-stopped
 
   backend.api:
-    image: docker.io/YOUR_USER/sanjusto-caja-backend-api:${APP_VERSION}
+    image: docker.io/marguellog/sanjusto-caja-backend-api:${APP_VERSION}
     restart: unless-stopped
     environment:
       CAJA_SERVICE_URL: http://backend.caja:8000
 
   backend.caja:
-    image: docker.io/YOUR_USER/sanjusto-caja-backend-caja:${APP_VERSION}
+    image: docker.io/marguellog/sanjusto-caja-backend-caja:${APP_VERSION}
     restart: unless-stopped
     environment:
       MYSQL_HOST: mysql
