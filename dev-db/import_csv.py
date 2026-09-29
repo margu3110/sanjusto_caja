@@ -5,19 +5,55 @@ from pathlib import Path
 
 import pymysql
 
-BASE_DIR = Path(
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = SCRIPT_DIR.parent
+ENV_FILE = PROJECT_DIR / ".env"
+
+if ENV_FILE.exists():
+    with ENV_FILE.open() as env_file:
+        for line in env_file:
+            line = line.strip()
+
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+
+            key, value = line.split("=", 1)
+
+            os.environ.setdefault(
+                key.strip(),
+                value.strip(),
+            )
+
+
+BASE_DIR = SCRIPT_DIR / "csv"
+
+DB_HOST = os.environ.get(
+    "MYSQL_HOST",
+    "127.0.0.1",
+)
+
+DB_PORT = int(
     os.environ.get(
-        "SANJUSTO_CSV_DIR",
-        "csv",
+        "MYSQL_PORT",
+        "3307",
     )
 )
 
-DB_HOST = os.environ.get("MYSQL_HOST", "127.0.0.1")
-DB_PORT = int(os.environ.get("MYSQL_PORT", "3307"))
-DB_NAME = os.environ.get("MYSQL_DATABASE", "sanjusto")
-DB_USER = os.environ.get("MYSQL_USER", "root")
-DB_PASSWORD = os.environ.get("MYSQL_PASSWORD", "root")
+DB_NAME = os.environ.get(
+    "MYSQL_DATABASE",
+    "sanjusto",
+)
 
+DB_USER = os.environ.get(
+    "MYSQL_BACKEND_USER",
+    "caja",
+)
+
+DB_PASSWORD = os.environ.get(
+    "MYSQL_BACKEND_PASSWORD",
+    "caja",
+)
 
 TABLES = [
     "ADMINISTRACIONCAJA",
