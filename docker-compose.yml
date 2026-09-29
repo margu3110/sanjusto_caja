@@ -24,9 +24,9 @@ services:
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
-      MYSQL_DATABASE: sanjusto
-      MYSQL_USER: root
-      MYSQL_PASSWORD: root
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_CAJA_USER}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD}
 
   mysql:
     image: mysql:8.4
@@ -34,8 +34,8 @@ services:
     restart: unless-stopped
 
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: sanjusto
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
 
     volumes:
       - mysql_data:/var/lib/mysql
