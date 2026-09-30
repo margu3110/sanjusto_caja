@@ -1,24 +1,37 @@
 services:
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      target: dev
     ports:
       - "5173:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
+    command: npm run dev -- --host
 
   backend.api:
-    build: ./backend.api
+    build:
+      context: ./backend.api
     ports:
       - "8000:8000"
     volumes:
       - ./backend.api:/app
     environment:
       CAJA_SERVICE_URL: http://backend.caja:8000
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
 
   backend.caja:
-    build: ./backend.caja
+    build:
+      context: ./backend.caja
     volumes:
       - ./backend.caja:/app
     environment:
@@ -27,6 +40,14 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_BACKEND_USER: ${MYSQL_BACKEND_USER}
       MYSQL_BACKEND_PASSWORD: ${MYSQL_BACKEND_PASSWORD}
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
 
   mysql:
     image: mysql:8.4

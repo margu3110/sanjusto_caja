@@ -593,7 +593,11 @@ export default function CajaPage() {
               getOptionLabel={(option) =>
                 `${option.codigo} - ${option.razonSocial}`
               }
-              disabled={noCustomer || savedReceipt !== null}
+              disabled={
+                loadingData ||
+                noCustomer ||
+                savedReceipt !== null
+              }
               value={selectedCustomer}
               onChange={(_, value) => setSelectedCustomer(value)}
               renderInput={(params) => (

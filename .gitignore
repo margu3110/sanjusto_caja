@@ -29,3 +29,8 @@ __pycache__/
 node_modules
 dev-db/*.csv
 .env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
