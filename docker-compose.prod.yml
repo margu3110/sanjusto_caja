@@ -5,10 +5,8 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/certs:/etc/nginx/certs:ro
     depends_on:
       - frontend
       - backend.api
@@ -22,6 +20,8 @@ services:
     restart: unless-stopped
     environment:
       CAJA_SERVICE_URL: http://backend.caja:8000
+    depends_on:
+      - backend.caja
 
   backend.caja:
     image: docker.io/marguellog/sanjusto-caja-backend-caja:prod
@@ -32,6 +32,8 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_BACKEND_USER: ${MYSQL_BACKEND_USER}
       MYSQL_BACKEND_PASSWORD: ${MYSQL_BACKEND_PASSWORD}
+    depends_on:
+      - mysql
 
   mysql:
     image: mysql:8.4
