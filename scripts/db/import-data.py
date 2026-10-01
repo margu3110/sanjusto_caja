@@ -7,7 +7,7 @@ import pymysql
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = SCRIPT_DIR.parent
+PROJECT_DIR = SCRIPT_DIR.parent.parent
 ENV_FILE = PROJECT_DIR / ".env"
 
 if ENV_FILE.exists():
@@ -26,34 +26,45 @@ if ENV_FILE.exists():
             )
 
 
-BASE_DIR = SCRIPT_DIR / "csv"
+BASE_DIR = PROJECT_DIR / "dev-db" / "csv"
 
-DB_HOST = os.environ.get(
-    "MYSQL_HOST",
-    "127.0.0.1",
-)
+APP_ENV = os.environ.get("APP_ENV")
 
-DB_PORT = int(
-    os.environ.get(
-        "MYSQL_PORT",
-        "3307",
+if not APP_ENV:
+    raise RuntimeError("APP_ENV is not set in .env")
+
+if APP_ENV not in {"dev", "prod"}:
+    raise RuntimeError(
+        f"Unsupported APP_ENV: {APP_ENV!r}"
     )
-)
 
-DB_NAME = os.environ.get(
-    "MYSQL_DATABASE",
-    "sanjusto",
-)
+DB_HOST = os.environ.get("MYSQL_HOST")
+DB_PORT = os.environ.get("MYSQL_PORT")
+DB_NAME = os.environ.get("MYSQL_DATABASE")
+DB_USER = os.environ.get("MYSQL_BACKEND_USER")
+DB_PASSWORD = os.environ.get("MYSQL_BACKEND_PASSWORD")
 
-DB_USER = os.environ.get(
-    "MYSQL_BACKEND_USER",
-    "caja",
-)
+required = {
+    "MYSQL_HOST": DB_HOST,
+    "MYSQL_PORT": DB_PORT,
+    "MYSQL_DATABASE": DB_NAME,
+    "MYSQL_BACKEND_USER": DB_USER,
+    "MYSQL_BACKEND_PASSWORD": DB_PASSWORD,
+}
 
-DB_PASSWORD = os.environ.get(
-    "MYSQL_BACKEND_PASSWORD",
-    "caja",
-)
+missing = [
+    name
+    for name, value in required.items()
+    if not value
+]
+
+if missing:
+    raise RuntimeError(
+        "Missing environment variables: "
+        + ", ".join(missing)
+    )
+
+DB_PORT = int(DB_PORT)
 
 TABLES = [
     "ADMINISTRACIONCAJA",
