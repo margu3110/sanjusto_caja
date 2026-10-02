@@ -26,27 +26,37 @@ if ENV_FILE.exists():
             )
 
 
-BASE_DIR = PROJECT_DIR / "dev-db" / "csv"
+IMPORT_DATA_DIR = os.environ.get("IMPORT_DATA_DIR")
+
+if not IMPORT_DATA_DIR:
+    raise RuntimeError(
+        "IMPORT_DATA_DIR is not set in .env"
+    )
+
+BASE_DIR = Path(IMPORT_DATA_DIR)
+
+if not BASE_DIR.is_absolute():
+    BASE_DIR = PROJECT_DIR / BASE_DIR
 
 APP_ENV = os.environ.get("APP_ENV")
 
 if not APP_ENV:
     raise RuntimeError("APP_ENV is not set in .env")
 
-if APP_ENV not in {"dev", "prod"}:
+if APP_ENV not in {"dev", "stage", "prod"}:
     raise RuntimeError(
         f"Unsupported APP_ENV: {APP_ENV!r}"
     )
 
-DB_HOST = os.environ.get("MYSQL_HOST")
-DB_PORT = os.environ.get("MYSQL_PORT")
+DB_HOST = os.environ.get("MYSQL_IMPORT_HOST")
+DB_PORT = os.environ.get("MYSQL_IMPORT_PORT")
 DB_NAME = os.environ.get("MYSQL_DATABASE")
 DB_USER = os.environ.get("MYSQL_BACKEND_USER")
 DB_PASSWORD = os.environ.get("MYSQL_BACKEND_PASSWORD")
 
 required = {
-    "MYSQL_HOST": DB_HOST,
-    "MYSQL_PORT": DB_PORT,
+    "MYSQL_IMPORT_HOST": DB_HOST,
+    "MYSQL_IMPORT_PORT": DB_PORT,
     "MYSQL_DATABASE": DB_NAME,
     "MYSQL_BACKEND_USER": DB_USER,
     "MYSQL_BACKEND_PASSWORD": DB_PASSWORD,
@@ -130,6 +140,36 @@ def get_column_types(connection, table):
             for row in cursor.fetchall()
         }
 
+def check_tables_are_empty(connection):
+    non_empty_tables = []
+
+    with connection.cursor() as cursor:
+        for table in TABLES:
+            cursor.execute(
+                f"SELECT COUNT(*) FROM `{table}`"
+            )
+
+            count = cursor.fetchone()[0]
+
+            if count > 0:
+                non_empty_tables.append(
+                    (table, count)
+                )
+
+    if non_empty_tables:
+        print()
+        print("ERROR: Import target is not empty.")
+
+        for table, count in non_empty_tables:
+            print(f"  {table}: {count:,} rows")
+
+        print()
+        print("No data was imported.")
+        raise RuntimeError(
+            "Import aborted because the database "
+            "already contains data."
+        )
+    
 def filter_duplicate_rows(table, reader):
     if table != "FACTURAS":
         yield from reader
@@ -246,6 +286,13 @@ def main():
     )
 
     try:
+        print("Checking that import tables are empty...")
+
+        check_tables_are_empty(connection)
+
+        print("Import target is empty.")
+        print()
+
         for table in TABLES:
             print(f"Importing {table}...", end=" ", flush=True)
 
