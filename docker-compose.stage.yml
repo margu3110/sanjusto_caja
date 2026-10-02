@@ -1,0 +1,50 @@
+services:
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+      - backend.api
+
+  frontend:
+    image: docker.io/marguellog/sanjusto-caja-frontend:prod
+    restart: unless-stopped
+
+  backend.api:
+    image: docker.io/marguellog/sanjusto-caja-backend-api:prod
+    restart: unless-stopped
+    environment:
+      CAJA_SERVICE_URL: http://backend.caja:8000
+    depends_on:
+      - backend.caja
+
+  backend.caja:
+    image: docker.io/marguellog/sanjusto-caja-backend-caja:prod
+    restart: unless-stopped
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_BACKEND_USER: ${MYSQL_BACKEND_USER}
+      MYSQL_BACKEND_PASSWORD: ${MYSQL_BACKEND_PASSWORD}
+    depends_on:
+      - mysql
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3308"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+volumes:
+  mysql_data:
