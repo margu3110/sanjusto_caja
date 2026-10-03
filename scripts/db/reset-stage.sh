@@ -7,6 +7,7 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 ENV_FILE="${PROJECT_DIR}/.env"
 SCHEMA_FILE="${PROJECT_DIR}/db/migrations/001_initial_schema.sql"
+COMPOSE_FILE="${PROJECT_DIR}/docker-compose.stage.yml"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
     echo "ERROR: .env file not found:"
@@ -17,6 +18,12 @@ fi
 if [[ ! -f "${SCHEMA_FILE}" ]]; then
     echo "ERROR: schema file not found:"
     echo "  ${SCHEMA_FILE}"
+    exit 1
+fi
+
+if [[ ! -f "${COMPOSE_FILE}" ]]; then
+    echo "ERROR: Docker Compose file not found:"
+    echo "  ${COMPOSE_FILE}"
     exit 1
 fi
 
@@ -38,7 +45,14 @@ if [[ "${APP_ENV}" != "stage" ]]; then
     exit 1
 fi
 
-echo "WARNING: This will completely reset the DEV database:"
+if [[ "${MYSQL_HOST}" != "mysql" || "${MYSQL_PORT}" != "3306" ]]; then
+    echo "ERROR: reset-stage.sh expects the STAGE MySQL service at mysql:3306."
+    echo "Current MYSQL_HOST=${MYSQL_HOST}"
+    echo "Current MYSQL_PORT=${MYSQL_PORT}"
+    exit 1
+fi
+
+echo "WARNING: This will completely reset the STAGE database:"
 echo
 echo "  Environment: ${APP_ENV}"
 echo "  Database:    ${MYSQL_DATABASE}"
@@ -55,14 +69,32 @@ if [[ "${answer}" != "y" && "${answer}" != "Y" ]]; then
 fi
 
 echo
+echo "Checking MySQL container..."
+
+if ! docker compose \
+    -f "${COMPOSE_FILE}" \
+    ps --status running --services | grep -qx "mysql"; then
+
+    echo "ERROR: MySQL container is not running."
+    echo
+    echo "Start the STAGE stack first with:"
+    echo
+    echo "  docker compose -f docker-compose.stage.yml up -d"
+    exit 1
+fi
+
+echo "MySQL container is running."
+
+echo
 echo "Checking MySQL root credentials..."
 
-if ! mysql \
-    --host="${MYSQL_HOST}" \
-    --port="${MYSQL_PORT}" \
-    --user=root \
-    --password="${MYSQL_ROOT_PASSWORD}" \
-    -e "SELECT 1;" >/dev/null 2>&1; then
+if ! docker compose \
+    -f "${COMPOSE_FILE}" \
+    exec -T mysql \
+    mysql \
+        --user=root \
+        --password="${MYSQL_ROOT_PASSWORD}" \
+        -e "SELECT 1;" >/dev/null 2>&1; then
 
     echo "ERROR: Could not authenticate to MySQL."
     exit 1
@@ -73,48 +105,52 @@ echo "MySQL connection OK."
 echo
 echo "Dropping database..."
 
-mysql \
-    --host="${MYSQL_HOST}" \
-    --port="${MYSQL_PORT}" \
-    --user=root \
-    --password="${MYSQL_ROOT_PASSWORD}" \
-    -e "DROP DATABASE IF EXISTS \`${MYSQL_DATABASE}\`;"
+docker compose \
+    -f "${COMPOSE_FILE}" \
+    exec -T mysql \
+    mysql \
+        --user=root \
+        --password="${MYSQL_ROOT_PASSWORD}" \
+        -e "DROP DATABASE IF EXISTS \`${MYSQL_DATABASE}\`;"
 
 echo "Database dropped."
 
 echo
 echo "Creating database..."
 
-mysql \
-    --host="${MYSQL_HOST}" \
-    --port="${MYSQL_PORT}" \
-    --user=root \
-    --password="${MYSQL_ROOT_PASSWORD}" \
-    -e "CREATE DATABASE \`${MYSQL_DATABASE}\`;"
+docker compose \
+    -f "${COMPOSE_FILE}" \
+    exec -T mysql \
+    mysql \
+        --user=root \
+        --password="${MYSQL_ROOT_PASSWORD}" \
+        -e "CREATE DATABASE \`${MYSQL_DATABASE}\`;"
 
 echo "Database created."
 
 echo
 echo "Loading schema..."
 
-mysql \
-    --host="${MYSQL_HOST}" \
-    --port="${MYSQL_PORT}" \
-    --user=root \
-    --password="${MYSQL_ROOT_PASSWORD}" \
-    "${MYSQL_DATABASE}" < "${SCHEMA_FILE}"
+docker compose \
+    -f "${COMPOSE_FILE}" \
+    exec -T mysql \
+    mysql \
+        --user=root \
+        --password="${MYSQL_ROOT_PASSWORD}" \
+        "${MYSQL_DATABASE}" < "${SCHEMA_FILE}"
 
 echo "Schema loaded."
 
 echo
 echo "Creating/configuring backend user..."
 
-mysql \
-    --host="${MYSQL_HOST}" \
-    --port="${MYSQL_PORT}" \
-    --user=root \
-    --password="${MYSQL_ROOT_PASSWORD}" \
-    -e "
+docker compose \
+    -f "${COMPOSE_FILE}" \
+    exec -T mysql \
+    mysql \
+        --user=root \
+        --password="${MYSQL_ROOT_PASSWORD}" \
+        -e "
         CREATE USER IF NOT EXISTS
             '${MYSQL_BACKEND_USER}'@'%'
             IDENTIFIED BY '${MYSQL_BACKEND_PASSWORD}';
@@ -131,7 +167,7 @@ mysql \
     "
 
 echo
-echo "DEV database reset successfully."
+echo "STAGE database reset successfully."
 echo
 echo "Environment:    ${APP_ENV}"
 echo "Database:       ${MYSQL_DATABASE}"
